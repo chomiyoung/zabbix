@@ -1,0 +1,247 @@
+<?php
+/*
+** Zabbix
+** Copyright (C) 2001-2016 Zabbix SIA
+**
+** This program is free software; you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation; either version 2 of the License, or
+** (at your option) any later version.
+**
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+** GNU General Public License for more details.
+**
+** You should have received a copy of the GNU General Public License
+** along with this program; if not, write to the Free Software
+** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+**/
+
+header("Content-Type: text/html; charset=UTF-8");
+mb_internal_encoding('UTF-8');
+mb_http_output('UTF-8');
+
+require_once dirname(__FILE__).'/include/config.inc.php';
+
+$page['title'] = _('gabia API');
+$page['file'] = 'gabia_api.php';
+
+define('ZBX_PAGE_DO_REFRESH', 1);
+
+require_once dirname(__FILE__).'/include/page_header.php';
+//********* ??Î∂ÄÎ∂ÑÍπåÏßÄ zabbix header Î©îÎâ¥?òÏò§Í≥??òÎäî Î∂ÄÎ∂?****************
+
+//?úÌîåÎ¶?Î¶¨Ïä§???åÏùº
+$tmp_list_dir = "/home/zabbix/api/tmp_list";
+
+//*****zabbix??curlÎ°??∏Ï∂ú?òÎäî Î∂ÄÎ∂??òÏ†ï?????ÜÏùå.
+$url = 'http://'ipaddress'/zabbix/api_jsonrpc.php';
+$header = array("Content-type: application/json-rpc");
+
+//*****zabbix??curlÎ°??∏Ï∂ú?òÎäî Î∂ÄÎ∂??òÏ†ï?????ÜÏùå.
+
+ function Curl($url,$header,$info){
+     $ch = curl_init();
+     curl_setopt($ch,CURLOPT_URL, $url);
+     curl_setopt($ch,CURLOPT_RETURNTRANSFER, 1);
+     curl_setopt($ch,CURLOPT_HTTPHEADER,$header);
+     curl_setopt($ch,CURLOPT_POST, 1);
+     curl_setopt($ch,CURLOPT_POSTFIELDS, $info);
+     $response = curl_exec($ch);
+     curl_close($ch);
+     return json_decode($response);
+ }
+
+$logininfo = '{"jsonrpc": "2.0","method":"user.login","params":{"user":"cmy","password":"y2032619!"},"auth": null,"id":0}';
+$result = Curl($url,$header,$logininfo);
+$token = $result->result;
+
+
+// template list Í∞Ä?∏Ïò§??Î∂ÄÎ∂?function tem_get($result, $token, $url, $header){
+
+    $tmpget = array(
+         'jsonrpc' => '2.0',
+         'method' => 'template.get',
+         "params" =>array(
+              "output" => ["hostid","name"],
+            ),
+        "auth"=>$token,
+        "id"=>1
+    );
+
+$data = json_encode($tmpget);
+$result = Curl($url,$header,$data);
+$rs=$result->result;
+
+    return $rs;
+}
+
+
+//objÎ°???template list Î∞∞Ïó¥Î°??òÍ?
+function tem_get_obj($result, $token, $url, $header){
+	$tmp_obj=tem_get($result, $token, $url, $header);
+
+	$arr_tmp_count=count($tmp_obj);
+	for ($i=0;$i<=$arr_tmp_count;$i++){
+
+		if (!isset($tmp_obj[$i])){
+		}else{
+
+			$tmp_obj_list[]=(array)$tmp_obj[$i];
+			$tmp_obj_name[]=$tmp_obj_list[$i]['name'];
+			$tmp_obj_tmpid[]=$tmp_obj_list[$i]['templateid'];
+		}
+	}
+			return array($tmp_obj_list, $tmp_obj_name, $tmp_obj_tmpid);
+}
+
+//Î∞∞Ïó¥Î°??òÍ? template name, id Î°?Íµ¨Î∂Ñ?òÏó¨ Î∞∞Ïó¥?Ä??function tem_file_write($result, $token, $url, $header, $tmp_list_dir){
+	$tmp_list=tem_get_obj($result, $token, $url, $header);
+	$tmp_name_id=$tem_list[0];
+	$tmp_name_arr=$tmp_list[1];
+	$tmp_id=$tmp_list[2];
+
+	$tmp_name=array_filter($tmp_name_arr);
+
+	$arr_tmp_count=count($tmp_name);
+	for ($i=0;$i<=$arr_tmp_count;$i++){
+
+		if($tmp_name[$i]){		
+			$tmp_list_file = fopen($tmp_list_dir, "a");  
+			fwrite($tmp_list_file, $tmp_name[$i]."\r\n");  
+			fclose($tmp_list_file);  
+		}
+	}
+}
+
+function file_check($result, $token, $url, $header, $tmp_list_dir, $file){
+	
+
+	$ip_list=up_file($file);		// ipÎ¶¨Ïä§??Ï∂úÎ†•
+	//$file="/home/zabbix/api/tmp_list";
+	$file_life='10';
+	if(file_exists($tmp_list_dir)) {
+
+		//?åÏùº ?úÍ∞ÑÏ≤¥ÌÅ¨
+		$filemtime = @filemtime($tmp_list_dir);
+		$n_time=time() - $filemtime;
+
+		//24?úÍ∞Ñ??ÏßÄ?òÎ©¥ temp_list ?§Ïãú ?ùÏÑ±.		
+		if($n_time >= $file_life){
+		
+			unlink($tmp_list_dir);	//?åÏùº ?∞Í∏∞??Ï¥àÍ∏∞??			tem_file_write($result, $token, $url, $header, $tmp_list_dir);
+
+		}
+			//temp_list ?åÏùº???ΩÏñ¥??check_backÎ°?Ï∂úÎ†•
+			$fp = fopen($tmp_list_dir, "r") or die("?åÏùº?¥Í∏∞???§Ìå®?òÏ??µÎãà??);	
+			while(!feof($fp)){
+				$temps[] .= fgets($fp);
+			}
+
+		   	fclose($fp);
+			echo "<font color=black size=4>Host Create</font><br><br><br>";
+			echo "<style>";
+			echo "td{padding:5px;}";
+			echo "</style>";
+			echo "<script type='text/javascript' src='http://code.jquery.com/jquery-1.8.1.min.js'></script>";
+			echo "<script type='text/javascript'>";
+
+
+			//radio box Ï≤òÎ¶¨?®Ïàò(?®ÏùºÎ°??±Î°ù?†Ï? multiÎ°??±Î°ù?†Ï????∞Î•∏ text box ÎπÑÌôú?±Ìôî)
+			echo "function renew(){";
+     				echo "document.textForm.text01.disabled = false;";
+     				echo "document.textForm.text02.disabled = true;";
+			echo "}";
+			echo "function release(){";
+     				echo "document.textForm.text01.disabled = true;";
+     				echo "document.textForm.text02.disabled = false;";
+			echo "}";
+
+                        echo "function checkboxSelectQue(n,obj) {";
+                        echo "var i;";
+                        echo "var modifyChk = document.getElementsByName(obj);";
+                        echo "var tot = modifyChk.length;";
+                                echo "for (i = 0; i < tot; i++) {";
+                                        echo "if (n == 1) modifyChk[i].checked = true;";
+                                        echo "if (n == 2) modifyChk[i].checked = false;";
+                                        echo "if (n == 3) modifyChk[i].checked = !modifyChk[i].checked;";
+                                echo "}";
+                        echo "}";
+			echo "</script>";
+			echo "<table>";
+			echo "<td style='background-color:white;'>";
+			echo "<table>";
+			//echo "<th colspan='100' style='background-color:yellow;'>";
+
+			echo "<form name='textForm' method='post' enctype='multipart/form-data' >";
+    			echo "<tr><td>?®Ïùº host  : <input type='radio' value='rCheck1' name='radioGroup' onclick=\"renew()\" checked />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+    			echo "multi host : <input type='radio' value='rCheck2' name='radioGroup' onclick=\"release()\" /></td></tr><tr><td height=10></td></tr>";
+    			echo "<tr><th colspan='2' >IP(text) :<input type='text' name='text01' />&nbsp;&nbsp;&nbsp;";
+		    	echo "IP(file) :<input type='file' name='text02' disabled='disabled' /></th></tr><tr><td height=5></td></tr>";
+	
+	
+			$ip_list_arr['ip_list'][]=$_POST['text01'];
+			for ($j=0 ; $j<=count($ip_list);$j++){
+			$ip_list_arr['ip_list'][]=$ip_list[$j];
+			}
+
+
+				echo "<tr><td></td><td></td><td></td><td><input type='button' value='Check All' onclick=\"checkboxSelectQue(1,'modifyChk[]')\" />";
+                        	echo "&nbsp&nbsp&nbsp<input type='button' value='Un Check All' onclick=\"checkboxSelectQue(2,'modifyChk[]')\" /></td><td size=3></td></tr><td></td><td></td><tr></tr>";
+
+			for($i=0 ; $i<=count($temps);$i++){ 
+				if($temps[$i]){	
+					if($i%4==0) echo "</tr>";
+			                   echo "<td><input type='checkbox' name='modifyChk[]' value='".$temps[$i]."'/>".$temps[$i];
+				} 
+
+			}
+				echo "</table>";
+				echo "</td>";
+				echo "</table>";
+				echo "<table>";
+				echo "<tr><td></td></tr>";
+				echo "<tr><td><input type='submit' value='Host Create'/><td/></tr>";
+				echo "</form>";
+			
+				$ip_list_arr['tmp_group']=$_POST['modifyChk'];
+				print_r($ip_list_arr);
+		
+				unset($ip_list_arr);	
+
+	}else{
+			//temp_file???ÜÏúºÎ©??àÎ°ú ?ùÏÑ±(curlÎ°?Î∞õÏïÑ???ùÏÑ±??
+			tem_file_write($result, $token, $url, $header);
+
+	}
+
+}
+
+// IP Î¶¨Ïä§???åÏùºÎ°?Î∞õÏïÑ??Ï≤òÎ¶¨ ?Ä?âÏùº??
+function up_file($file){
+
+	$file=$_FILES[text02][tmp_name];
+	if(is_uploaded_file($file)){
+
+   		$fp = fopen($file, "r") or die("no file");
+   		while(!feof($fp)){
+
+      			$buffer .=fgets($fp);
+			$ip_arr[]=$buffer;
+   		}
+
+		//	$ip_arr;
+			return $ip_arr;
+
+   			fclose($fp);
+	}	
+
+}
+
+file_check($result, $token, $url, $header, $tmp_list_dir, $file);
+
+//footer
+dirname(__FILE__).'/include/page_footer.php';
+
+?>
